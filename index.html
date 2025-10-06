@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VSE Stock Trainer Final</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<style>
+body{margin:0;transition:background 0.3s,color 0.3s;}
+.dark{background:#121212;color:#e0e0e0;}
+.light{background:#f5f7fb;color:#1f2937;}
+.navbar{background:#1e40af;color:white;padding:10px;display:flex;gap:10px;flex-wrap:wrap;}
+.navbar button{background:#3b82f6;border:none;color:white;padding:8px 12px;cursor:pointer;border-radius:5px;}
+.card{background:white;padding:15px;border-radius:8px;margin:10px 0;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
+.dark .card{background:#1f2937;color:white;}
+table{width:100%;border-collapse:collapse;}
+th,td{border:1px solid #ddd;padding:8px;text-align:center;}
+li{list-style:none;cursor:pointer;padding:4px;}
+li:hover{background:#e5e7eb;}
+.dark li:hover{background:#374151;}
+</style>
+</head>
+<body class="light">
+
+<!-- LOGIN PAGE -->
+<div id="login-page" class="p-5">
+<h2 class="text-xl font-bold mb-3">Stock Trainer Login</h2>
+<div id="common-pass-div">
+<input type="password" id="common-pass" placeholder="Enter common password" class="border rounded p-2">
+<button onclick="verifyCommonPassword()" class="mt-2 bg-blue-500 text-white rounded px-3 py-1">Next</button>
+</div>
+<div id="email-pass-div" class="hidden mt-3">
+<input type="email" id="email" placeholder="Email" class="border rounded p-2">
+<input type="password" id="password" placeholder="Password" class="border rounded p-2 mt-2">
+<button onclick="loginUser()" class="mt-2 bg-blue-500 text-white rounded px-3 py-1">Login</button>
+</div>
+</div>
+
+<!-- MAIN PAGE -->
+<div id="trainer-page" class="hidden p-5">
+<div class="navbar mb-5">
+<button onclick="showPage('stocks')">📊 Stocks</button>
+<button onclick="showPage('holdings')">💼 Holdings</button>
+<button onclick="showPage('orders')">🧾 Orders</button>
+<button onclick="showPage('watchlist')">⭐ Watchlist</button>
+<button onclick="showPage('admin')">⚙️ Admin Panel</button>
+<button onclick="toggleTheme()" class="ml-auto bg-gray-700 px-2 py-1 rounded">Theme</button>
+<span class="ml-2">User: <span id="user-name"></span></span>
+<button onclick="logoutUser()" class="ml-2 bg-red-500 px-2 py-1 rounded">Logout</button>
+</div>
+
+<!-- STOCKS PAGE -->
+<div id="stocks" class="page">
+<div class="card">
+<input type="text" id="stock-search" placeholder="Search NSE stock" onkeyup="searchStock()" class="border rounded p-2 w-full">
+<ul id="search-results" class="border rounded p-2 mt-2 max-h-40 overflow-y-auto"></ul>
+</div>
+<div class="card mt-2">
+<div id="tradingview-widget-container"><div id="tradingview_widget"></div></div>
+</div>
+<div class="card mt-2">
+<input type="number" id="buy-qty" placeholder="Quantity to Buy" class="border rounded p-2">
+<button onclick="buyStock()" class="bg-green-500 text-white rounded px-3 py-1 mt-2">Buy</button>
+<button onclick="sellStock()" class="bg-red-500 text-white rounded px-3 py-1 mt-2 ml-2">Sell All</button>
+<button onclick="addWatchlist()" class="bg-yellow-500 text-white rounded px-3 py-1 mt-2 ml-2">Add to Watchlist</button>
+</div>
+</div>
+
+<!-- HOLDINGS PAGE -->
+<div id="holdings" class="page hidden">
+<h3 class="text-lg font-bold mb-2">Your Holdings</h3>
+<table>
+<thead><tr><th>Stock</th><th>Quantity</th><th>Avg Price</th><th>Current Price</th><th>Value</th></tr></thead>
+<tbody id="portfolio-body"></tbody>
+</table>
+</div>
+
+<!-- ORDERS PAGE -->
+<div id="orders" class="page hidden">
+<h3 class="text-lg font-bold mb-2">Orders History</h3>
+<table>
+<thead><tr><th>Stock</th><th>Quantity</th><th>Price</th><th>Type</th><th>Date</th></tr></thead>
+<tbody id="orders-body"></tbody>
+</table>
+</div>
+
+<!-- WATCHLIST PAGE -->
+<div id="watchlist" class="page hidden">
+<h3 class="text-lg font-bold mb-2">Watchlist</h3>
+<ul id="watchlist-body"></ul>
+</div>
+
+<!-- ADMIN PAGE -->
+<div id="admin" class="page hidden">
+<h3 class="text-lg font-bold mb-2">Admin Panel</h3>
+<table>
+<thead><tr><th>User</th><th>Balance</th><th>Portfolio Value</th><th>Total Orders</th></tr></thead>
+<tbody id="admin-body"></tbody>
+</table>
+</div>
+
+<div class="mt-3">Balance: ₹<span id="balance">0</span></div>
+
+<script>
+const FIREBASE_CONFIG={
+apiKey:"AIzaSyBFLVuBT-sSdcq-MjiL5tB17mfeNpP2jN8",
+authDomain:"vsestocktrainer-a5b04.firebaseapp.com",
+projectId:"vsestocktrainer-a5b04",
+storageBucket:"vsestocktrainer-a5b04.firebasestorage.app",
+messagingSenderId:"652083011735",
+appId:"1:652083011735:web:3ab6396a3d5888abec49d2"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+const COMMON_PASSWORD="vse2k25";
+const ADMIN_EMAIL="admin6@vse.com";
+const ADMIN_PASSWORD="adminvse2k25";
+let currentUser=null;
+let selectedStock=null;
+let allStocks=[];
+
+// Fetch all NSE stocks using Twelve Data API
+const TD_API_KEY="c933f15065e54a7b9d8908b084d72de1";
+async function fetchAllStocks(){
+try{
+const res=await axios.get(`https://api.twelvedata.com/symbol_search?symbol=&exchange=XNSE&apikey=${TD_API_KEY}`);
+allStocks=res.data.data.map(s=>s.symbol);
+}catch(e){console.error(e);}
+}
+fetchAllStocks();
+
+// LOGIN
+function verifyCommonPassword(){
+if(document.getElementById('common-pass').value===COMMON_PASSWORD){
+document.getElementById('common-pass-div').classList.add('hidden');
+document.getElementById('email-pass-div').classList.remove('hidden');
+}else alert("Incorrect common password");
+}
+function loginUser(){
+const email=document.getElementById('email').value;
+const password=document.getElementById('password').value;
+if(email===ADMIN_EMAIL && password===ADMIN_PASSWORD){
+currentUser={uid:"admin",email:ADMIN_EMAIL};
+loadUserData();
+return;
+}
+auth.signInWithEmailAndPassword(email,password).then(res=>{
+currentUser=res.user;
+loadUserData();
+}).catch(err=>alert(err.message));
+}
+function logoutUser(){auth.signOut().then(()=>location.reload());}
+function loadUserData(){
+document.getElementById('login-page').classList.add('hidden');
+document.getElementById('trainer-page').classList.remove('hidden');
+document.getElementById('user-name').innerText=currentUser.email||"Admin";
+db.collection('users').doc(currentUser.uid).get().then(doc=>{
+if(!doc.exists){
+db.collection('users').doc(currentUser.uid).set({balance:50000,portfolio:{},orders:[],watchlist:[]});
+}
+refreshAll();
+});
+}
+
+// THEME
+function toggleTheme(){
+document.body.classList.toggle('dark');
+document.body.classList.toggle('light');
+}
+
+// NAVIGATION
+function showPage(page){
+document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+document.getElementById(page).classList.remove('hidden');
+}
+
+// SEARCH
+function searchStock(){
+const query=document.getElementById('stock-search').value.toUpperCase();
+const results=document.getElementById('search-results');
+results.innerHTML='';
+allStocks.filter(s=>s.includes(query)).forEach(stock=>{
+const li=document.createElement('li');
+li.textContent=stock;
+li.onclick=()=>selectStock(stock);
+results.appendChild(li);
+});
+}
+
+function selectStock(stock){
+selectedStock=stock;
+document.getElementById('stock-search').value=stock;
+document.getElementById('search-results').innerHTML='';
+loadTradingView(stock);
+}
+
+// TRADINGVIEW
+function loadTradingView(symbol){
+const container=document.getElementById('tradingview_widget');
+container.innerHTML='';
+const iframe=document.createElement('iframe');
+iframe.src=`https://s.tradingview.com/widgetembed/?symbol=NSE:${symbol}&interval=D&theme=light&style=1&toolbarbg=f1f3f6&withdateranges=1&hidevolume=0&hidetoptoolbar=0&saveimage=0&studies=[]&enable_publishing=0&hideideas=1&allow_symbol_change=1&container_id=tradingview_widget`;
+iframe.width='100%';
+iframe.height='500';
+iframe.frameBorder='0';
+container.appendChild(iframe);
+}
+
+// BUY / SELL / WATCHLIST
+function buyStock(){
+const qty=parseInt(document.getElementById('buy-qty').value);
+if(!selectedStock||!qty) return alert("Select stock and quantity");
+db.collection('users').doc(currentUser.uid).get().then(doc=>{
+let data=doc.data();
+const price=Math.floor(Math.random()*500)+100;
+if(data.balance<price*qty) return alert("Insufficient balance");
+data.balance-=price*qty;
+if(!data.portfolio[selectedStock]) data.portfolio[selectedStock]={quantity:0,avgPrice:0};
+const p=data.portfolio[selectedStock];
+p.avgPrice=(p.avgPrice*p.quantity+price*qty)/(p.quantity+qty);
+p.quantity+=qty;
+const order={stock:selectedStock,quantity:qty,price:price,type:"Buy",date:new Date().toLocaleString()};
+data.orders.push(order);
+db.collection('users').doc(currentUser.uid).update({balance:data.balance,portfolio:data.portfolio,orders:data.orders}).then(refreshAll);
+});
+}
+function sellStock(){
+if(!selectedStock) return alert("Select stock");
+db.collection('users').doc(currentUser.uid).get().then(doc=>{
+let data=doc.data();
+if(!data.portfolio[selectedStock]) return alert("No holdings");
+const qty=data.portfolio[selectedStock].quantity;
+const price=Math.floor(Math.random()*500)+100;
+data.balance+=qty*price;
+const order={stock:selectedStock,quantity:qty,price:price,type:"Sell",date:new Date().toLocaleString()};
+data.orders.push(order);
+delete data.portfolio[selectedStock];
+db.collection('users').doc(currentUser.uid).update({balance:data.balance,portfolio:data.portfolio,orders:data.orders}).then(refreshAll);
+});
+}
+function addWatchlist(){
+if(!selectedStock) return alert("Select stock");
+db.collection('users').doc(currentUser.uid).get().then(doc=>{
+let data=doc.data();
+if(!data.watchlist.includes(selectedStock)) data.watchlist.push(selectedStock);
+db.collection('users').doc(currentUser.uid).update({watchlist:data.watchlist}).then(refreshAll);
+});
+}
+
+// REFRESH
+function refreshAll(){
+db.collection('users').doc(currentUser.uid).get().then(doc=>{
+const data=doc.data();
+document.getElementById('balance').innerText=data.balance.toFixed(2);
+
+// Portfolio
+const tbody=document.getElementById('portfolio-body'); tbody.innerHTML='';
+for(let s in data.portfolio){
+const p=data.portfolio[s];
+const price=Math.floor(Math.random()*500)+100;
+const val=(p.quantity*price).toFixed(2);
+const row=document.createElement('tr');
+row.innerHTML=`<td>${s}</td><td>${p.quantity}</td><td>${p.avgPrice.toFixed(2)}</td><td>${price}</td><td>${val}</td>`;
+tbody.appendChild(row);
+}
+
+// Orders
+const ordersBody=document.getElementById('orders-body'); ordersBody.innerHTML='';
+data.orders.forEach(o=>{
+const row=document.createElement('tr');
+row.innerHTML=`<td>${o.stock}</td><td>${o.quantity}</td><td>${o.price}</td><td>${o.type}</td><td>${o.date}</td>`;
+ordersBody.appendChild(row);
+});
+
+// Watchlist
+const wl=document.getElementById('watchlist-body'); wl.innerHTML='';
+data.watchlist.forEach(s=>{
+const li=document.createElement('li');
+li.textContent=s;
+wl.appendChild(li);
+});
+
+// Admin panel
+if(currentUser.uid==="admin"){
+db.collection('users').get().then(snapshot=>{
+const adminBody=document.getElementById('admin-body'); adminBody.innerHTML='';
+snapshot.forEach(doc=>{
+const u=doc.data();
+let portfolioValue=0;
+for(let s in u.portfolio){portfolioValue+=u.portfolio[s].quantity*(Math.floor(Math.random()*500)+100);}
+const row=document.createElement('tr');
+row.innerHTML=`<td>${doc.id}</td><td>${u.balance.toFixed(2)}</td><td>${portfolioValue.toFixed(2)}</td><td>${u.orders.length}</td>`;
+adminBody.appendChild(row);
+});
+});
+}
+});
+}
+</script>
+</body>
+</html>
